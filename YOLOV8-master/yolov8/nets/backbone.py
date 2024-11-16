@@ -4,25 +4,25 @@ import torch.nn as nn
 
 def autopad(k, p=None, d=1):
     # kernel, padding, dilation
-    # 对输入的特征层进行自动padding，按照Same原则
+    # Automatically pad the input feature layer, following the "Same" principle
     if d > 1:
-        # actual kernel-size
+        # Actual kernel size
         k = d * (k - 1) + 1 if isinstance(k, int) else [d * (x - 1) + 1 for x in k]
     if p is None:
-        # auto-pad
+        # Auto-pad
         p = k // 2 if isinstance(k, int) else [x // 2 for x in k]
     return p
 
 
 class SiLU(nn.Module):
-    # SiLU激活函数
+    # SiLU activation function
     @staticmethod
     def forward(x):
         return x * torch.sigmoid(x)
 
 
 class Conv(nn.Module):
-    # 标准卷积+标准化+激活函数
+    # Standard convolution + normalization + activation function
     default_act = SiLU()
 
     def __init__(self, c1, c2, k=1, s=1, p=None, g=1, d=1, act=True):
@@ -39,8 +39,8 @@ class Conv(nn.Module):
 
 
 class Bottleneck(nn.Module):
-    # 标准瓶颈结构，残差结构
-    # c1为输入通道数，c2为输出通道数
+    # Standard bottleneck structure, residual structure
+    # c1 is the input channel count, c2 is the output channel count
     def __init__(self, c1, c2, shortcut=True, g=1, k=(3, 3), e=0.5):
         super().__init__()
         c_ = int(c2 * e)  # hidden channels
@@ -53,8 +53,8 @@ class Bottleneck(nn.Module):
 
 
 class C2f(nn.Module):
-    # CSPNet结构结构，大残差结构
-    # c1为输入通道数，c2为输出通道数
+    # CSPNet structure, large residual structure
+    # c1 is the input channel count, c2 is the output channel count
     def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5):
         super().__init__()
         self.c = int(c2 * e)
@@ -63,15 +63,15 @@ class C2f(nn.Module):
         self.m = nn.ModuleList(Bottleneck(self.c, self.c, shortcut, g, k=((3, 3), (3, 3)), e=1.0) for _ in range(n))
 
     def forward(self, x):
-        # 进行一个卷积，然后划分成两份，每个通道都为c
+        # Perform one convolution, then split into two parts, each with c channels
         y = list(self.cv1(x).split((self.c, self.c), 1))
-        # 每进行一次残差结构都保留，然后堆叠在一起，密集残差
+        # Apply the residual structure iteratively, stacking the outputs, resulting in dense residuals
         y.extend(m(y[-1]) for m in self.m)
         return self.cv2(torch.cat(y, 1))
 
 
 class SPPF(nn.Module):
-    # SPP结构，5、9、13最大池化核的最大池化。
+    # SPP structure, maximum pooling with kernels of size 5, 9, and 13
     def __init__(self, c1, c2, k=5):
         super().__init__()
         c_ = c1 // 2
@@ -90,7 +90,7 @@ class Backbone(nn.Module):
     def __init__(self, base_channels, base_depth, deep_mul, phi, pretrained=False):
         super().__init__()
         # -----------------------------------------------#
-        #   输入图片是3, 640, 640
+        #   Input image size is 3, 640, 640
         # -----------------------------------------------#
         # 3, 640, 640 => 32, 640, 640 => 64, 320, 320
         self.stem = Conv(3, base_channels, 3, 2)
@@ -133,17 +133,17 @@ class Backbone(nn.Module):
         x = self.stem(x)
         x = self.dark2(x)
         # -----------------------------------------------#
-        #   dark3的输出为256, 80, 80，是一个有效特征层
+        #   The output of dark3 is 256, 80, 80, which is a valid feature layer
         # -----------------------------------------------#
         x = self.dark3(x)
         feat1 = x
         # -----------------------------------------------#
-        #   dark4的输出为512, 40, 40，是一个有效特征层
+        #   The output of dark4 is 512, 40, 40, which is a valid feature layer
         # -----------------------------------------------#
         x = self.dark4(x)
         feat2 = x
         # -----------------------------------------------#
-        #   dark5的输出为1024 * deep_mul, 20, 20，是一个有效特征层
+        #   The output of dark5 is 1024 * deep_mul, 20, 20, which is a valid feature layer
         # -----------------------------------------------#
         x = self.dark5(x)
         feat3 = x
