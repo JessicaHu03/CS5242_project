@@ -8,7 +8,7 @@ from utils.utils_bbox import make_anchors
 
 
 def fuse_conv_and_bn(conv, bn):
-    # 混合Conv2d + BatchNorm2d 减少计算量
+    # Combine Conv2d + BatchNorm2d to reduce computation
     # Fuse Conv2d() and BatchNorm2d() layers https://tehnokv.com/posts/fusing-batchnorm-and-conv/
     fusedconv = nn.Conv2d(conv.in_channels,
                           conv.out_channels,
@@ -19,12 +19,12 @@ def fuse_conv_and_bn(conv, bn):
                           groups=conv.groups,
                           bias=True).requires_grad_(False).to(conv.weight.device)
 
-    # 准备kernel
+    # Prepare the kernel
     w_conv = conv.weight.clone().view(conv.out_channels, -1)
     w_bn = torch.diag(bn.weight.div(torch.sqrt(bn.eps + bn.running_var)))
     fusedconv.weight.copy_(torch.mm(w_bn, w_conv).view(fusedconv.weight.shape))
 
-    # 准备bias
+    # Prepare the bias
     b_conv = torch.zeros(conv.weight.size(0), device=conv.weight.device) if conv.bias is None else conv.bias
     b_bn = bn.bias - bn.weight.mul(bn.running_mean).div(torch.sqrt(bn.running_var + bn.eps))
     fusedconv.bias.copy_(torch.mm(w_bn, b_conv.reshape(-1, 1)).reshape(-1) + b_bn)
@@ -33,7 +33,7 @@ def fuse_conv_and_bn(conv, bn):
 
 
 class DFL(nn.Module):
-    # DFL模块
+    # DFL module
     # Distribution Focal Loss (DFL) proposed in Generalized Focal Loss https://ieeexplore.ieee.org/document/9792391
     def __init__(self, c1=16):
         super().__init__()
@@ -46,7 +46,7 @@ class DFL(nn.Module):
         # bs, self.reg_max * 4, 8400
         b, c, a = x.shape
         # bs, 4, self.reg_max, 8400 => bs, self.reg_max, 4, 8400 => b, 4, 8400
-        # 以softmax的方式，对0~16的数字计算百分比，获得最终数字。
+        # Compute percentages for numbers 0~16 using softmax, to get the final numbers.
         return self.conv(x.view(b, 4, self.c1, a).transpose(2, 1).softmax(1)).view(b, 4, a)
         # return self.conv(x.view(b, self.c1, 4, a).softmax(1)).view(b, 4, a)
 
@@ -65,19 +65,19 @@ class YoloBody(nn.Module):
         base_channels = int(wid_mul * 64)  # 64
         base_depth = max(round(dep_mul * 3), 1)  # 3
         # -----------------------------------------------#
-        #   输入图片是3, 640, 640
+        #   Input image size is 3, 640, 640
         # -----------------------------------------------#
 
         # ---------------------------------------------------#
-        #   生成主干模型
-        #   获得三个有效特征层，他们的shape分别是：
+        #   Generate the backbone model
+        #   Obtain three valid feature layers with the following shapes:
         #   256, 80, 80
         #   512, 40, 40
         #   1024 * deep_mul, 20, 20
         # ---------------------------------------------------#
         self.backbone = Backbone(base_channels, base_depth, deep_mul, phi, pretrained=pretrained)
 
-        # ------------------------加强特征提取网络------------------------#
+        # ------------------------Feature extraction network enhancement------------------------#
         self.upsample = nn.Upsample(scale_factor=2, mode="nearest")
 
         # 1024 * deep_mul + 512, 40, 40 => 512, 40, 40
@@ -95,15 +95,14 @@ class YoloBody(nn.Module):
 
         # 512, 40, 40 => 512, 20, 20
         self.down_sample2 = Conv(base_channels * 8, base_channels * 8, 3, 2)
-        # 1024 * deep_mul + 512, 20, 20 =>  1024 * deep_mul, 20, 20
+        # 1024 * deep_mul + 512, 20, 20 => 1024 * deep_mul, 20, 20
         self.conv3_for_downsample2 = C2f(int(base_channels * 16 * deep_mul) + base_channels * 8,
                                          int(base_channels * 16 * deep_mul), base_depth, shortcut=False)
-        # ------------------------加强特征提取网络------------------------#
+        # ------------------------Feature extraction network enhancement------------------------#
 
         ch = [base_channels * 4, base_channels * 8, int(base_channels * 16 * deep_mul)]
         self.shape = None
         self.nl = len(ch)
-        # self.stride     = torch.zeros(self.nl)
         self.stride = torch.tensor(
             [256 / x.shape[-2] for x in self.backbone.forward(torch.zeros(1, 3, 256, 256))])  # forward
         self.reg_max = 16  # DFL channels (ch[0] // 16 to scale 4/8/12/16/20 for n/s/m/l/x)
@@ -129,10 +128,10 @@ class YoloBody(nn.Module):
         return self
 
     def forward(self, x):
-        #  backbone
+        #  Backbone
         feat1, feat2, feat3 = self.backbone.forward(x)
 
-        # ------------------------加强特征提取网络------------------------#
+        # ------------------------Feature extraction network enhancement------------------------#
         # 1024 * deep_mul, 20, 20 => 1024 * deep_mul, 40, 40
         P5_upsample = self.upsample(feat3)
         # 1024 * deep_mul, 40, 40 cat 512, 40, 40 => 1024 * deep_mul + 512, 40, 40
@@ -160,7 +159,7 @@ class YoloBody(nn.Module):
         P5 = torch.cat([P4_downsample, feat3], 1)
         # 1024 * deep_mul + 512, 20, 20 => 1024 * deep_mul, 20, 20
         P5 = self.conv3_for_downsample2(P5)
-        # ------------------------加强特征提取网络------------------------#
+        # ------------------------Feature extraction network enhancement------------------------#
         # P3 256, 80, 80
         # P4 512, 40, 40
         # P5 1024 * deep_mul, 20, 20
@@ -181,6 +180,5 @@ class YoloBody(nn.Module):
         #                                           box self.reg_max * 4, 8400
         box, cls = torch.cat([xi.view(shape[0], self.no, -1) for xi in x], 2).split(
             (self.reg_max * 4, self.num_classes), 1)
-        # origin_cls      = [xi.split((self.reg_max * 4, self.num_classes), 1)[1] for xi in x]
         dbox = self.dfl(box)
         return dbox, cls, x, self.anchors.to(dbox.device), self.strides.to(dbox.device)

@@ -1,13 +1,12 @@
 import random
-
 import numpy as np
 import torch
 from PIL import Image
 
 
 # ---------------------------------------------------------#
-#   将图像转换成RGB图像，防止灰度图在预测时报错。
-#   代码仅仅支持RGB图像的预测，所有其它类型的图像都会转化成RGB
+#   Convert the image to RGB format to avoid errors during prediction.
+#   The code only supports RGB images; other formats will be converted to RGB.
 # ---------------------------------------------------------#
 def cvtColor(image):
     if len(np.shape(image)) == 3 and np.shape(image)[2] == 3:
@@ -16,13 +15,11 @@ def cvtColor(image):
         image = image.convert('RGB')
         return image
 
-    # ---------------------------------------------------#
 
-
-#   对输入图像进行resize
+# ---------------------------------------------------#
+#   Resize the input image
 # ---------------------------------------------------#
 def resize_image(image, size, letterbox_image):
-
     iw, ih = image.size
     w, h = size
     if letterbox_image:
@@ -39,7 +36,7 @@ def resize_image(image, size, letterbox_image):
 
 
 def array_to_image(array, size, letterbox_image=True):
-
+    """Convert a NumPy array to a resized image."""
     h, w, c = array.shape
     image = Image.fromarray(array)
 
@@ -56,8 +53,9 @@ def array_to_image(array, size, letterbox_image=True):
 
     return new_image
 
+
 # ---------------------------------------------------#
-#   获得类
+#   Retrieve the list of class names
 # ---------------------------------------------------#
 def get_classes(classes_path):
     with open(classes_path, encoding='utf-8') as f:
@@ -67,7 +65,7 @@ def get_classes(classes_path):
 
 
 # ---------------------------------------------------#
-#   获得学习率
+#   Retrieve the learning rate
 # ---------------------------------------------------#
 def get_lr(optimizer):
     for param_group in optimizer.param_groups:
@@ -75,7 +73,7 @@ def get_lr(optimizer):
 
 
 # ---------------------------------------------------#
-#   设置种子
+#   Set random seed
 # ---------------------------------------------------#
 def seed_everything(seed=11):
     random.seed(seed)
@@ -88,7 +86,7 @@ def seed_everything(seed=11):
 
 
 # ---------------------------------------------------#
-#   设置Dataloader的种子
+#   Set seed for DataLoader
 # ---------------------------------------------------#
 def worker_init_fn(worker_id, rank, seed):
     worker_seed = rank + seed
@@ -98,11 +96,13 @@ def worker_init_fn(worker_id, rank, seed):
 
 
 def preprocess_input(image):
+    """Normalize the image to [0, 1] range."""
     image /= 255.0
     return image
 
 
 def show_config(**kwargs):
+    """Display configuration settings."""
     print('Configurations:')
     print('-' * 70)
     print('|%25s | %40s|' % ('keys', 'values'))
@@ -113,8 +113,8 @@ def show_config(**kwargs):
 
 
 def download_weights(phi, model_dir="./model_data"):
+    """Download model weights based on the given phi value."""
     import os
-
     from torch.hub import load_state_dict_from_url
 
     download_urls = {

@@ -3,10 +3,8 @@ import numpy as np
 import torch
 import torch.backends.cudnn as cudnn
 
-
 from arcface.nets.arcface import Arcface as arcface
 from utils.utils import preprocess_input, resize_image, array_to_image, show_config
-
 
 
 class Arcface(object):
@@ -14,37 +12,40 @@ class Arcface(object):
     _initialized = False
     _defaults = {
         # --------------------------------------------------------------------------#
-        #   使用自己训练好的模型进行预测要修改model_path，指向logs文件夹下的权值文件
-        #   训练好后logs文件夹下存在多个权值文件，选择验证集损失较低的即可。
-        #   验证集损失较低不代表准确度较高，仅代表该权值在验证集上泛化性能较好。
+        #   If using a custom-trained model for predictions, modify `model_path` to
+        #   point to the weight file in the logs folder.
+        #   After training, there will be multiple weight files in the logs folder.
+        #   Choose the one with the lowest validation loss.
+        #   Note that lower validation loss doesn't guarantee higher accuracy,
+        #   it only indicates better generalization performance on the validation set.
         # --------------------------------------------------------------------------#
         "model_path": r"E:\Arcface\model\arcface_iresnet50.pth",
         # "model_path": r"E:\Arcface\model\arcface_mobilefacenet.pth",
         # -------------------------------------------#
-        #   输入图片的大小。
+        #   Input image size.
         # -------------------------------------------#
         "input_shape": [256, 256, 3],
         # -------------------------------------------#
-        #   所使用到的主干特征提取网络，与训练的相同
-        #   mobilefacenet
-        #   mobilenetv1
-        #   iresnet18
-        #   iresnet34
-        #   iresnet50
-        #   iresnet100
-        #   iresnet200
+        #   Backbone feature extraction network, must match the one used during training.
+        #   Options:
+        #   - mobilefacenet
+        #   - mobilenetv1
+        #   - iresnet18
+        #   - iresnet34
+        #   - iresnet50
+        #   - iresnet100
+        #   - iresnet200
         # -------------------------------------------#
         "backbone": "iresnet50",
         # -------------------------------------------#
-        #   是否进行不失真的resize
+        #   Whether to resize without distortion.
         # -------------------------------------------#
         "letterbox_image": True,
         # -------------------------------------------#
-        #   是否使用Cuda
-        #   没有GPU可以设置成False
+        #   Whether to use CUDA (GPU).
+        #   Set to False if no GPU is available.
         # -------------------------------------------#
         "cuda": True,
-
     }
 
     @classmethod
@@ -55,7 +56,7 @@ class Arcface(object):
             return "Unrecognized attribute name '" + n + "'"
 
     # ---------------------------------------------------#
-    #   初始化Arcface
+    #   Initialize Arcface
     # ---------------------------------------------------#
     def __init__(self, **kwargs):
         if not Arcface._initialized:
@@ -70,7 +71,7 @@ class Arcface(object):
 
     def generate(self):
         # ---------------------------------------------------#
-        #   载入模型与权值
+        #   Load model and weights
         # ---------------------------------------------------#
         print('Loading weights into state dict...')
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -84,17 +85,17 @@ class Arcface(object):
             self.net = self.net.cuda()
 
     # ---------------------------------------------------#
-    #   检测图片
+    #   Detect images
     # ---------------------------------------------------#
     def detect_image_arcface(self, image_1, image_2):
         # ---------------------------------------------------#
-        #   图片预处理，归一化
+        #   Preprocess images and normalize
         # ---------------------------------------------------#
         with torch.no_grad():
             image_1 = array_to_image(image_1, [self.input_shape[1], self.input_shape[0]],
-                                   letterbox_image=self.letterbox_image)
+                                     letterbox_image=self.letterbox_image)
             image_2 = array_to_image(image_2, [self.input_shape[1], self.input_shape[0]],
-                                   letterbox_image=self.letterbox_image)
+                                     letterbox_image=self.letterbox_image)
 
             photo_1 = torch.from_numpy(
                 np.expand_dims(np.transpose(preprocess_input(np.array(image_1, np.float32)), (2, 0, 1)), 0))
@@ -106,16 +107,17 @@ class Arcface(object):
                 photo_2 = photo_2.cuda()
 
             # ---------------------------------------------------#
-            #   图片传入网络进行预测
+            #   Feed images into the network for prediction
             # ---------------------------------------------------#
             output1 = self.net(photo_1).cpu().numpy()
             output2 = self.net(photo_2).cpu().numpy()
 
             # ---------------------------------------------------#
-            #   计算二者之间的距离
+            #   Calculate the distance between the two outputs
             # ---------------------------------------------------#
             l1 = np.linalg.norm(output1 - output2, axis=1)
 
+        # Uncomment below for visualization
         # plt.subplot(1, 2, 1)
         # plt.imshow(np.array(image_1))
         #
@@ -127,17 +129,17 @@ class Arcface(object):
 
     def get_FPS(self, image, test_interval):
         # ---------------------------------------------------#
-        #   对图片进行不失真的resize
+        #   Resize the image without distortion
         # ---------------------------------------------------#
         image_data = resize_image(image, [self.input_shape[1], self.input_shape[0]], self.letterbox_image)
         # ---------------------------------------------------------#
-        #   归一化+添加上batch_size维度
+        #   Normalize and add batch_size dimension
         # ---------------------------------------------------------#
         image_data = torch.from_numpy(
             np.expand_dims(np.transpose(preprocess_input(np.array(image_data, np.float32)), (2, 0, 1)), 0))
         with torch.no_grad():
             # ---------------------------------------------------#
-            #   图片传入网络进行预测
+            #   Feed the image into the network for prediction
             # ---------------------------------------------------#
             preds = self.net(image_data).cpu().numpy()
 
@@ -146,7 +148,7 @@ class Arcface(object):
         for _ in range(test_interval):
             with torch.no_grad():
                 # ---------------------------------------------------#
-                #   图片传入网络进行预测
+                #   Feed the image into the network for prediction
                 # ---------------------------------------------------#
                 preds = self.net(image_data).cpu().numpy()
         t2 = time.time()

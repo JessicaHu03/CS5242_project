@@ -18,157 +18,116 @@ from utils.utils_fit import fit_one_epoch
 
 if __name__ == "__main__":
     # -------------------------------#
-    #   是否使用Cuda
-    #   没有GPU可以设置成False
+    #   Whether to use CUDA
+    #   Set to False if no GPU is available
     # -------------------------------#
     Cuda = True
     # ----------------------------------------------#
-    #   Seed    用于固定随机种子
-    #           使得每次独立训练都可以获得一样的结果
+    #   Seed: Used to set a random seed
+    #   Ensures the same results for independent runs
     # ----------------------------------------------#
     seed = 11
     # ---------------------------------------------------------------------#
-    #   distributed     用于指定是否使用单机多卡分布式运行
-    #                   终端指令仅支持Ubuntu。CUDA_VISIBLE_DEVICES用于在Ubuntu下指定显卡。
-    #                   Windows系统下默认使用DP模式调用所有显卡，不支持DDP。
-    #   DP模式：
-    #       设置            distributed = False
-    #       在终端中输入    CUDA_VISIBLE_DEVICES=0,1 python train.py
-    #   DDP模式：
-    #       设置            distributed = True
-    #       在终端中输入    CUDA_VISIBLE_DEVICES=0,1 python -m torch.distributed.launch --nproc_per_node=2 train.py
+    #   distributed: Indicates whether to use multi-GPU distributed training
+    #   Terminal commands only support Ubuntu. CUDA_VISIBLE_DEVICES is used to specify GPUs on Ubuntu.
+    #   On Windows, DP mode is used by default to access all GPUs; DDP is not supported.
+    #   DP mode:
+    #       Set            distributed = False
+    #       Run command    CUDA_VISIBLE_DEVICES=0,1 python train.py
+    #   DDP mode:
+    #       Set            distributed = True
+    #       Run command    CUDA_VISIBLE_DEVICES=0,1 python -m torch.distributed.launch --nproc_per_node=2 train.py
     # ---------------------------------------------------------------------#
     distributed = False
     # ---------------------------------------------------------------------#
-    #   sync_bn     是否使用sync_bn，DDP模式多卡可用
+    #   sync_bn: Whether to use sync_bn, available in multi-GPU DDP mode
     # ---------------------------------------------------------------------#
     sync_bn = False
     # ---------------------------------------------------------------------#
-    #   fp16        是否使用混合精度训练
-    #               可减少约一半的显存、需要pytorch1.7.1以上
+    #   fp16: Whether to use mixed-precision training
+    #   Can reduce memory usage by about half; requires PyTorch 1.7.1 or higher
     # ---------------------------------------------------------------------#
     fp16 = False
     # --------------------------------------------------------#
-    #   指向根目录下的cls_train.txt，读取人脸路径与标签
+    #   Path to cls_train.txt in the root directory; contains face image paths and labels
     # --------------------------------------------------------#
     annotation_path = "cls_train.txt"
     # --------------------------------------------------------#
-    #   输入图像大小
+    #   Input image size
     # --------------------------------------------------------#
     input_shape = [112, 112, 3]
     # --------------------------------------------------------#
-    #   主干特征提取网络的选择
-    #   mobilefacenet
-    #   mobilenetv1
-    #   iresnet18
-    #   iresnet34
-    #   iresnet50
-    #   iresnet100
-    #   iresnet200
+    #   Backbone feature extraction network options
+    #   mobilefacenet, mobilenetv1, iresnet18, iresnet34,
+    #   iresnet50, iresnet100, iresnet200
     #
-    #   除了mobilenetv1外，其它的backbone均可从0开始训练。
-    #   这是由于mobilenetv1没有残差边，收敛速度慢，因此建议：
-    #   如果使用mobilenetv1为主干,  则设置pretrain = True
-    #   如果使用其它网络为主干，    则设置pretrain = False
+    #   All backbones except mobilenetv1 can train from scratch.
+    #   mobilenetv1 is slower to converge due to the lack of residual connections, so it's recommended:
+    #   If using mobilenetv1 as backbone, set pretrain = True
+    #   If using other backbones, set pretrain = False
     # --------------------------------------------------------#
     backbone = "mobilefacenet"
     # ----------------------------------------------------------------------------------------------------------------------------#
-    #   如果训练过程中存在中断训练的操作，可以将model_path设置成logs文件夹下的权值文件，将已经训练了一部分的权值再次载入。
-    #   同时修改下方的训练的参数，来保证模型epoch的连续性。
+    #   If training was interrupted, set model_path to a weights file in the logs folder to resume training.
+    #   Also adjust the training parameters below to ensure continuity of epochs.
     #   
-    #   当model_path = ''的时候不加载整个模型的权值。
+    #   When model_path = '', the entire model is trained from scratch.
     #
-    #   此处使用的是整个模型的权重，因此是在train.py进行加载的，pretrain不影响此处的权值加载。
-    #   如果想要让模型从主干的预训练权值开始训练，则设置model_path = ''，pretrain = True，此时仅加载主干。
-    #   如果想要让模型从0开始训练，则设置model_path = ''，pretrain = Fasle，此时从0开始训练。
+    #   To train from the backbone's pretrained weights, set model_path = '', pretrain = True.
+    #   To train from scratch, set model_path = '', pretrain = False.
     # ----------------------------------------------------------------------------------------------------------------------------#
     model_path = ""
     # ----------------------------------------------------------------------------------------------------------------------------#
-    #   是否使用主干网络的预训练权重，此处使用的是主干的权重，因此是在模型构建的时候进行加载的。
-    #   如果设置了model_path，则主干的权值无需加载，pretrained的值无意义。
-    #   如果不设置model_path，pretrained = True，此时仅加载主干开始训练。
-    #   如果不设置model_path，pretrained = False，此时从0开始训练。
-    #   除了mobilenetv1外，其它的backbone均未提供预训练权重。
+    #   Whether to use pretrained weights for the backbone. 
+    #   Pretrained weights for the backbone are loaded when the model is constructed.
+    #   If model_path is set, pretrained weights are ignored.
     # ----------------------------------------------------------------------------------------------------------------------------#
     pretrained = False
 
     # ----------------------------------------------------------------------------------------------------------------------------#
-    #   显存不足与数据集大小无关，提示显存不足请调小batch_size。
-    #   受到BatchNorm层影响，不能为1。
+    #   Reduce batch_size if there is insufficient GPU memory. 
+    #   BatchNorm layers prevent batch_size from being set to 1.
     #
-    #   在此提供若干参数设置建议，各位训练者根据自己的需求进行灵活调整：
-    #   （一）从预训练权重开始训练：
-    #       Adam：
-    #           Init_Epoch = 0，Epoch = 100，optimizer_type = 'adam'，Init_lr = 1e-3，weight_decay = 0。
-    #       SGD：
-    #           Init_Epoch = 0，Epoch = 100，optimizer_type = 'sgd'，Init_lr = 1e-2，weight_decay = 5e-4。
-    #       其中：UnFreeze_Epoch可以在100-300之间调整。
-    #   （二）batch_size的设置：
-    #       在显卡能够接受的范围内，以大为好。显存不足与数据集大小无关，提示显存不足（OOM或者CUDA out of memory）请调小batch_size。
-    #       受到BatchNorm层影响，batch_size最小为2，不能为1。
-    #       正常情况下Freeze_batch_size建议为Unfreeze_batch_size的1-2倍。不建议设置的差距过大，因为关系到学习率的自动调整。
+    #   Parameter adjustment recommendations:
+    #   (1) Training from pretrained weights:
+    #       Adam:
+    #           Init_Epoch = 0, Epoch = 100, optimizer_type = 'adam', Init_lr = 1e-3, weight_decay = 0.
+    #       SGD:
+    #           Init_Epoch = 0, Epoch = 100, optimizer_type = 'sgd', Init_lr = 1e-2, weight_decay = 5e-4.
+    #       Adjust UnFreeze_Epoch between 100-300.
+    #   (2) batch_size:
+    #       Set as large as possible within GPU memory limits. If memory is insufficient (OOM or CUDA out of memory),
+    #       reduce batch_size. Batch size should be at least 2 due to BatchNorm layers.
     # ----------------------------------------------------------------------------------------------------------------------------#
     # ------------------------------------------------------#
-    #   训练参数
-    #   Init_Epoch      模型当前开始的训练世代
-    #   Epoch           模型总共训练的epoch
-    #   batch_size      每次输入的图片数量
+    #   Training parameters
+    #   Init_Epoch: Initial training epoch
+    #   Epoch: Total number of epochs
+    #   batch_size: Number of images per batch
     # ------------------------------------------------------#
     Init_Epoch = 0
     Epoch = 100
     batch_size = 64
 
     # ------------------------------------------------------------------#
-    #   其它训练参数：学习率、优化器、学习率下降有关
-    # ------------------------------------------------------------------#
-    # ------------------------------------------------------------------#
-    #   Init_lr         模型的最大学习率
-    #   Min_lr          模型的最小学习率，默认为最大学习率的0.01
+    #   Other training parameters: learning rate, optimizer, and learning rate decay
     # ------------------------------------------------------------------#
     Init_lr = 1e-2
     Min_lr = Init_lr * 0.01
-    # ------------------------------------------------------------------#
-    #   optimizer_type  使用到的优化器种类，可选的有adam、sgd
-    #                   当使用Adam优化器时建议设置  Init_lr=1e-3
-    #                   当使用SGD优化器时建议设置   Init_lr=1e-2
-    #   momentum        优化器内部使用到的momentum参数
-    #   weight_decay    权值衰减，可防止过拟合
-    #                   adam会导致weight_decay错误，使用adam时建议设置为0。
-    # ------------------------------------------------------------------#
     optimizer_type = "sgd"
     momentum = 0.9
     weight_decay = 5e-4
-    # ------------------------------------------------------------------#
-    #   lr_decay_type   使用到的学习率下降方式，可选的有step、cos
-    # ------------------------------------------------------------------#
     lr_decay_type = "cos"
-    # ------------------------------------------------------------------#
-    #   save_period     多少个epoch保存一次权值，默认每个世代都保存
-    # ------------------------------------------------------------------#
     save_period = 1
-    # ------------------------------------------------------------------#
-    #   save_dir        权值与日志文件保存的文件夹
-    # ------------------------------------------------------------------#
     save_dir = 'logs'
-    # ------------------------------------------------------------------#
-    #   用于设置是否使用多线程读取数据
-    #   开启后会加快数据读取速度，但是会占用更多内存
-    #   内存较小的电脑可以设置为2或者0  
-    # ------------------------------------------------------------------#
     num_workers = 4
-    # ------------------------------------------------------------------#
-    #   是否开启LFW评估
-    # ------------------------------------------------------------------#
     lfw_eval_flag = True
-    # ------------------------------------------------------------------#
-    #   LFW评估数据集的文件路径和对应的txt文件
-    # ------------------------------------------------------------------#
     lfw_dir_path = "lfw"
     lfw_pairs_path = "model_data/lfw_pair.txt"
 
     seed_everything(seed)
     # ------------------------------------------------------#
-    #   设置用到的显卡
+    #   Set GPU devices
     # ------------------------------------------------------#
     ngpus_per_node = torch.cuda.device_count()
     if distributed:
@@ -186,19 +145,19 @@ if __name__ == "__main__":
 
     num_classes = get_num_classes(annotation_path)
     # ---------------------------------#
-    #   载入模型并加载预训练权重
+    #   Load the model and pretrained weights
     # ---------------------------------#
     model = Arcface(num_classes=num_classes, backbone=backbone, pretrained=pretrained)
 
     if model_path != '':
         # ------------------------------------------------------#
-        #   权值文件请看README，百度网盘下载
+        #   Weight files can be found in the README (Baidu Cloud link provided)
         # ------------------------------------------------------#
         if local_rank == 0:
             print('Load weights {}.'.format(model_path))
 
         # ------------------------------------------------------#
-        #   根据预训练权重的Key和模型的Key进行加载
+        #   Load weights by matching keys in the model and the pretrained weights
         # ------------------------------------------------------#
         model_dict = model.state_dict()
         pretrained_dict = torch.load(model_path, map_location=device)
@@ -212,15 +171,16 @@ if __name__ == "__main__":
         model_dict.update(temp_dict)
         model.load_state_dict(model_dict)
         # ------------------------------------------------------#
-        #   显示没有匹配上的Key
+        #   Display unmatched keys
         # ------------------------------------------------------#
         if local_rank == 0:
             print("\nSuccessful Load Key:", str(load_key)[:500], "……\nSuccessful Load Key Num:", len(load_key))
             print("\nFail To Load Key:", str(no_load_key)[:500], "……\nFail To Load Key num:", len(no_load_key))
-            print("\n\033[1;33;44m温馨提示，head部分没有载入是正常现象，Backbone部分没有载入是错误的。\033[0m")
+            print("\n\033[1;33;44mNote: It is normal for the head section keys not to load. "
+                  "If the backbone section keys fail to load, it is an issue.\033[0m")
 
     # ----------------------#
-    #   记录Loss
+    #   Record loss history
     # ----------------------#
     if local_rank == 0:
         loss_history = LossHistory(save_dir, model, input_shape=input_shape)
@@ -228,8 +188,7 @@ if __name__ == "__main__":
         loss_history = None
 
     # ------------------------------------------------------------------#
-    #   torch 1.2不支持amp，建议使用torch 1.7.1及以上正确使用fp16
-    #   因此torch1.2这里显示"could not be resolve"
+    #   PyTorch 1.2 does not support AMP; use PyTorch 1.7.1 or above for correct fp16 support
     # ------------------------------------------------------------------#
     if fp16:
         from torch.cuda.amp import GradScaler as GradScaler
@@ -240,17 +199,17 @@ if __name__ == "__main__":
 
     model_train = model.train()
     # ----------------------------#
-    #   多卡同步Bn
+    #   Multi-GPU synchronized BatchNorm
     # ----------------------------#
     if sync_bn and ngpus_per_node > 1 and distributed:
         model_train = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model_train)
     elif sync_bn:
-        print("Sync_bn is not support in one gpu or not distributed.")
+        print("Sync_bn is not supported with one GPU or without distributed mode.")
 
     if Cuda:
         if distributed:
             # ----------------------------#
-            #   多卡平行运行
+            #   Parallel multi-GPU execution
             # ----------------------------#
             model_train = model_train.cuda(local_rank)
             model_train = torch.nn.parallel.DistributedDataParallel(model_train, device_ids=[local_rank],
@@ -261,14 +220,14 @@ if __name__ == "__main__":
             model_train = model_train.cuda()
 
     # ---------------------------------#
-    #   LFW估计
+    #   LFW evaluation
     # ---------------------------------#
     LFW_loader = torch.utils.data.DataLoader(
         LFWDataset(dir=lfw_dir_path, pairs_path=lfw_pairs_path, image_size=input_shape), batch_size=32,
         shuffle=False) if lfw_eval_flag else None
 
     # -------------------------------------------------------#
-    #   0.01用于验证，0.99用于训练
+    #   0.01 for validation, 0.99 for training
     # -------------------------------------------------------#
     val_split = 0.01
     with open(annotation_path, "r") as f:
@@ -288,7 +247,7 @@ if __name__ == "__main__":
 
     if True:
         # -------------------------------------------------------------------#
-        #   判断当前batch_size，自适应调整学习率
+        #   Adjust learning rate based on current batch size
         # -------------------------------------------------------------------#
         nbs = 64
         lr_limit_max = 1e-3 if optimizer_type == 'adam' else 1e-1
@@ -297,7 +256,7 @@ if __name__ == "__main__":
         Min_lr_fit = min(max(batch_size / nbs * Min_lr, lr_limit_min * 1e-2), lr_limit_max * 1e-2)
 
         # ---------------------------------------#
-        #   根据optimizer_type选择优化器
+        #   Select optimizer based on optimizer_type
         # ---------------------------------------#
         optimizer = {
             'adam': optim.Adam(model.parameters(), Init_lr_fit, betas=(momentum, 0.999), weight_decay=weight_decay),
@@ -306,28 +265,28 @@ if __name__ == "__main__":
         }[optimizer_type]
 
         # ---------------------------------------#
-        #   获得学习率下降的公式
+        #   Get learning rate scheduler
         # ---------------------------------------#
         lr_scheduler_func = get_lr_scheduler(lr_decay_type, Init_lr_fit, Min_lr_fit, Epoch)
 
         # ---------------------------------------#
-        #   判断每一个世代的长度
+        #   Determine epoch lengths
         # ---------------------------------------#
         epoch_step = num_train // batch_size
         epoch_step_val = num_val // batch_size
 
         if epoch_step == 0 or epoch_step_val == 0:
-            raise ValueError("数据集过小，无法继续进行训练，请扩充数据集。")
+            raise ValueError("Dataset is too small for training; please expand the dataset.")
 
         # ---------------------------------------#
-        #   构建数据集加载器。
+        #   Build dataset loaders
         # ---------------------------------------#
         train_dataset = FacenetDataset(input_shape, lines[:num_train], random=True)
         val_dataset = FacenetDataset(input_shape, lines[num_train:], random=False)
 
         if distributed:
-            train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset, shuffle=True, )
-            val_sampler = torch.utils.data.distributed.DistributedSampler(val_dataset, shuffle=False, )
+            train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset, shuffle=True)
+            val_sampler = torch.utils.data.distributed.DistributedSampler(val_dataset, shuffle=False)
             batch_size = batch_size // ngpus_per_node
             shuffle = False
         else:
